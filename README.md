@@ -54,5 +54,3 @@ A multi-threaded Air Traffic Control (ATC) simulation developed in Java. This pr
 
 ---
 
-## Project Structure
-
