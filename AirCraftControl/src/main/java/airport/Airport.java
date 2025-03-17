@@ -6,8 +6,8 @@ import java.util.List;
 public class Airport {
 
     private final int Id;
-    private final double x; // position along X-axis
-    private final double y = 0; // airports are at ground level (fixed)
+    private final double x;
+    private final double y = 0;
 
     private final List<Slot> slots;
     private final AirportControlManager airportControlManager;
@@ -15,9 +15,7 @@ public class Airport {
     public Airport(int Id, double x, int nbOfSlots, int timeBetweenOps) {
         this.Id = Id;
         this.x = x;
-
-        // Y is always zero for airports, we don't need to pass it
-
+        // y mereu 0 pentru airports
         this.slots = new ArrayList<>();
         for (int i = 0; i < nbOfSlots; i++) {
             Slot slot = new Slot(i);
@@ -27,7 +25,6 @@ public class Airport {
         this.airportControlManager = new AirportControlManager(this, timeBetweenOps);
     }
 
-    // Getters
     public int getId() {
         return Id;
     }
@@ -48,7 +45,6 @@ public class Airport {
         return airportControlManager;
     }
 
-    // Optional: easy toString for debugging
     @Override
     public String toString() {
         return "Airport " + Id + " at (" + x + ", " + y + ")";

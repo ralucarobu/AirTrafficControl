@@ -18,52 +18,42 @@ public class SimulationGUI {
     private List<String> warningsList = new ArrayList<>();
     private long simulationStartTime;
 
-    // World size for scaling purposes
     private final double worldXMax = 20000;
     private final double worldYMax = 12000;
 
-    // Plane image & scale
     private Image planeImage;
     private double scaleFactor = 0.05;
 
-    // ✅ Constructor
+
     public SimulationGUI(List<Aircraft> aircraftList, List<Airport> airportList) {
         this.aircraftList = aircraftList;
         this.airportList = airportList;
-
-        // Load plane image from resources (make sure it's in src/main/resources)
         planeImage = new ImageIcon(getClass().getResource("/plane.png")).getImage();
 
         simulationStartTime = System.currentTimeMillis();
-
-        // Setup JFrame
         frame = new JFrame("Air Traffic Control Simulation");
         frame.setSize(1200, 800);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        // Setup Panel
+
         panel = new SimulationPanel();
         frame.add(panel);
         frame.setVisible(true);
 
-        // Refresh every 50ms
+
         Timer timer = new Timer(50, e -> panel.repaint());
         timer.start();
     }
 
-    // ✅ Display warning message
     public void displayWarning(String message) {
         warningsList.add(message);
 
-        // Optional: Automatically remove the message after 3 seconds
         Timer clearWarningTimer = new Timer(3000, e -> warningsList.remove(message));
         clearWarningTimer.setRepeats(false);
         clearWarningTimer.start();
     }
 
-    // ===========================
-    // ✅ Inner SimulationPanel
-    // ===========================
+
     private class SimulationPanel extends JPanel {
 
         @Override
@@ -73,20 +63,12 @@ public class SimulationGUI {
         }
 
         private void drawScene(Graphics2D g2d) {
-            // Background
             g2d.setColor(Color.WHITE);
             g2d.fillRect(0, 0, getWidth(), getHeight());
 
-            // Draw airports
             drawAirports(g2d);
-
-            // Draw aircraft
             drawAircraft(g2d);
-
-            // Draw simulation time
             drawSimulationTime(g2d);
-
-            // Draw warnings
             drawWarnings(g2d);
         }
 
@@ -112,16 +94,13 @@ public class SimulationGUI {
                 int screenX = mapX(aircraft.getX());
                 int screenY = mapY(aircraft.getY());
 
-                // Draw plane image
                 g2d.drawImage(planeImage, screenX - 20, screenY - 20, 40, 40, this);
 
-                // Highlight rerouted/conflict avoidance planes
                 if (aircraft.isInConflictAvoidance()) {
                     g2d.setColor(Color.RED);
                     g2d.drawRect(screenX - 20, screenY - 20, 40, 40);
                 }
 
-                // Draw aircraft label
                 g2d.setColor(Color.BLACK);
                 g2d.drawString("A" + aircraft.getAircraftId(), screenX - 10, screenY - 25);
             }
@@ -148,7 +127,6 @@ public class SimulationGUI {
             }
         }
 
-        // ✅ Coordinate mapping
         private int mapX(double worldX) {
             double scale = (getWidth() - 100) / worldXMax;
             return (int) (50 + worldX * scale);

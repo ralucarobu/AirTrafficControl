@@ -4,9 +4,6 @@ import airport.Airport;
 import airport.AirportControlManager;
 import airport.Slot;
 
-import java.util.LinkedList;
-import java.util.Queue;
-
 public class Aircraft extends Thread {
 
     private final int Id;
@@ -16,12 +13,12 @@ public class Aircraft extends Thread {
     private boolean tookOff;
     private boolean landed;
 
+    private boolean conflictAvoidanceActive = false; // new flag
+
     private Route route;
     private double cruiseAltitude;
     private double cruiseX; // X position where altitude is max
-    private Queue<double[]> waypoints = new LinkedList<>();
     private double[] currentTarget;  // Next target point (waypoint or destination)
-    private boolean inConflictAvoidance = false;
     private Route originalRoute;
 
     public Aircraft(int id, int speed) {
@@ -29,6 +26,7 @@ public class Aircraft extends Thread {
         this.speed = speed;
         this.tookOff = false;
         this.landed = true; // initially landed at origin airport
+        this.route=null;
     }
 
     public void assignRoute(Route route) {
@@ -37,19 +35,16 @@ public class Aircraft extends Thread {
         this.tookOff = false;
         this.landed = true;
 
-        // Set initial position at the origin airport
         this.x = route.getFromAirport().getX();
-        this.y = 0; // always zero on ground
+        this.y = 0; // coordonatele intiaile la aeroportul din care porneste
 
         double x1 = route.getFromAirport().getX();
         double x2 = route.getToAirport().getX();
 
-        // Set cruiseAltitude = half of the horizontal distance
         this.cruiseAltitude = Math.abs(x2 - x1) / 2.0;
+        this.cruiseX = (x1 + x2) / 2.0; // Midpoint in X where the aircraft reaches cruiseAltitude
 
-        // Midpoint in X where the aircraft reaches cruiseAltitude
-        this.cruiseX = (x1 + x2) / 2.0;
-
+        // Initial target is the destination (ground level)
         this.currentTarget = new double[]{ route.getToAirport().getX(), 0 };
 
         System.out.println("Aircraft " + Id + " assigned route from " + x1 + " to " + x2 +
@@ -67,151 +62,128 @@ public class Aircraft extends Thread {
         AirportControlManager originControl = originAirport.getControlManager();
 
         // 1. Request takeoff permission
-        Slot takeoffSlot = null;
-        while (takeoffSlot == null) {
-            takeoffSlot = originControl.requestTakeoffPermission(this);
-            if (takeoffSlot == null) {
-                try {
-                    Thread.sleep(1000); // wait and try again
-                } catch (InterruptedException e) {
-                    System.out.println("Aircraft " + Id + " interrupted while waiting for takeoff.");
-                    return;
-                }
-            }
+        Slot takeoffSlot = originControl.requestTakeoffPermission(this);
+        if (takeoffSlot == null) {
+            System.out.println("Aircraft " + Id + " failed to obtain takeoff permission.");
+            return;
         }
+        System.out.println("Aircraft " + Id + " has TAKEN OFF from Airport " + originAirport.getId() + ", slot " + takeoffSlot.getId());
 
-        System.out.println("Aircraft " + Id + " has TAKEN OFF from Airport " + originAirport.getId() + ", slot " + takeoffSlot);
-
-        // After takeoff, release the slot
+        // After takeoff release the slot
         originControl.releaseSlot(takeoffSlot);
 
-        // 2. Start flying toward destination
+        // Start flying toward destination
         tookOff = true;
         landed = false;
 
         long updateInterval = 1000; // ms
-        while (!landed) {
+        while (!landed && !Thread.currentThread().isInterrupted()) {
             try {
-                updatePosition(updateInterval / 1000.0); // time in seconds
+                updatePosition(updateInterval / 1000.0);
                 Thread.sleep(updateInterval);
             } catch (InterruptedException e) {
                 System.out.println("Aircraft " + Id + " interrupted during flight.");
+                Thread.currentThread().interrupt();
                 return;
             }
         }
-
         System.out.println("Aircraft " + Id + " has COMPLETED its route.");
     }
 
     private void updatePosition(double timeElapsedInSeconds) {
         if (!tookOff || landed || route == null) return;
 
-        // --- Determine Current Target ---
-        if (!waypoints.isEmpty()) {
-            currentTarget = waypoints.peek(); // Next waypoint
+        double[] target;
+        if (!route.getWaypoints().isEmpty()) {
+            target = route.getWaypoints().peek();
         } else {
-            currentTarget = new double[]{ route.getToAirport().getX(), 0 };
+            target = new double[]{ route.getToAirport().getX(), 0 };
         }
+        currentTarget = target;
 
-        double targetX = currentTarget[0];
-        double targetY = currentTarget[1]; // For now, it's usually 0, but can be set in waypoints
+        double targetX = target[0];
+        double targetY = target[1];
 
         double distanceToTravel = speed * timeElapsedInSeconds;
         double remainingDistanceX = Math.abs(targetX - x);
 
-        // Move X toward targetX unless already there
+
         if (remainingDistanceX > 0) {
             double stepX = Math.min(remainingDistanceX, distanceToTravel);
             x += Math.signum(targetX - x) * stepX;
         }
 
-        // Handle Y (altitude)
-        if (!waypoints.isEmpty()) {
-            // Waypoint has its own altitude (optional logic)
-            y = targetY;  // For simple rerouting, follow given Y
-        } else {
-            // Normal flight path: climb to cruiseAltitude and descend
+        if (conflictAvoidanceActive && !route.getWaypoints().isEmpty()) {
+            y = currentTarget[1];
+        }
+        else {
+            // Normal flight path
             double x1 = route.getFromAirport().getX();
             double x2 = route.getToAirport().getX();
-
             if (Math.abs(x - cruiseX) < 1e-3) {
                 y = cruiseAltitude;
             } else if ((x1 < x2 && x < cruiseX) || (x1 > x2 && x > cruiseX)) {
-                // Ascending
                 double slope = cruiseAltitude / (cruiseX - x1);
                 y = slope * (x - x1);
             } else {
-                // Descending
                 double slope = cruiseAltitude / (x2 - cruiseX);
                 y = cruiseAltitude - slope * (x - cruiseX);
             }
-
             if (y < 0) y = 0;
         }
 
-        // --- Check if Reached Current Target ---
+        // Check if reached current target
         boolean atTargetX = Math.abs(x - targetX) < 1e-3;
         boolean atTargetY = Math.abs(y - targetY) < 1e-3;
 
         if (atTargetX && atTargetY) {
-            if (!waypoints.isEmpty()) {
-                waypoints.poll(); // Finished waypoint, continue to next
+            if (!route.getWaypoints().isEmpty()) {
+                route.reachWaypoint();
                 System.out.println("Aircraft " + Id + " reached waypoint at (" + x + ", " + y + ")");
             } else if (!landed) {
                 landed = true;
                 System.out.println("Aircraft " + Id + " has LANDED at Airport " + route.getToAirport().getId());
             }
         }
-
         System.out.printf("Aircraft %d position updated to (%.0f, %.0f)%n", Id, x, y);
     }
 
-    public void addWaypoint(double x, double y) {
-        waypoints.add(new double[]{ x, y });
-        System.out.println("Aircraft " + Id + " added waypoint (" + x + ", " + y + ")");
-    }
     public void reroute() {
-        if (!inConflictAvoidance) {
-            // Move to a higher cruiseAltitude for simplicity
-            //cruiseAltitude += 1000;
-            this.y+=2000;
-            inConflictAvoidance = true;
+        if (!conflictAvoidanceActive) {
+            conflictAvoidanceActive = true;
 
-            System.out.println("Aircraft " + Id + " rerouted to avoid collision. New cruiseAltitude: " + cruiseAltitude);
+            double rerouteYOffset = 2000; // How much to climb
+            double rerouteXOffset = 500;  // Move forward in X
+
+            double rerouteX = this.x + rerouteXOffset;
+            double rerouteY = this.y + rerouteYOffset;
+
+            // waypoint into the aircrafts route
+            route.addWaypoint(rerouteX, rerouteY);
+
+            System.out.println("Aircraft " + Id + " activated conflict avoidance. Waypoint added: (" + rerouteX + ", " + rerouteY + ")");
         }
     }
 
+
+
     public void revertToOriginalRoute() {
-        if (inConflictAvoidance) {
-            // Revert cruiseAltitude based on original route distance
-            double x1 = originalRoute.getFromAirport().getX();
-            double x2 = originalRoute.getToAirport().getX();
-            cruiseAltitude = Math.abs(x2 - x1) / 2.0;
-            inConflictAvoidance = false;
+        if (conflictAvoidanceActive) {
+            conflictAvoidanceActive = false;
+            route.getWaypoints().clear();
 
             System.out.println("Aircraft " + Id + " reverted to original route. CruiseAltitude: " + cruiseAltitude);
         }
     }
 
 
-    // Getters
     public int getAircraftId() { return Id; }
     public double getX() { return x; }
     public double getY() { return y; }
     public boolean isLanded() { return landed; }
-    public boolean hasTakenOff() {
-        return tookOff;
-    }
+    public boolean hasTakenOff() { return tookOff; }
+    public boolean isInConflictAvoidance() { return conflictAvoidanceActive; }
 
-
-    // Setters (optional, usually not needed)
     public void setX(double x) { this.x = x; }
     public void setY(double y) { this.y = y; }
-
-    public boolean isInConflictAvoidance() { return inConflictAvoidance; }
-    public void setInConflictAvoidance(boolean value) { inConflictAvoidance = value; }
-
-    public boolean isTookOff() {
-        return tookOff;
-    }
 }

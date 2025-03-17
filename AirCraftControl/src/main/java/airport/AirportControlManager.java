@@ -5,11 +5,7 @@ import aircraft.Aircraft;
 public class AirportControlManager {
 
     private final Airport airport;
-
-    // Time separation between any two operations (takeoff or landing) in seconds
     private final int timeBetween;
-
-    // Tracks the last time a takeoff or landing was granted (in seconds)
     private long lastOperationTime = 0;
 
     public AirportControlManager(Airport airport, int timeBetween) {
@@ -17,76 +13,64 @@ public class AirportControlManager {
         this.timeBetween = timeBetween;
     }
 
-    /**
-     * Requests permission for an aircraft to take off.
-     * Enforces time separation and slot availability.
-     */
     public synchronized Slot requestTakeoffPermission(Aircraft aircraft) {
-        long currentTime = System.currentTimeMillis() / 1000; // convert ms to seconds
-
-        if ((currentTime - lastOperationTime) < timeBetween) {
-            System.out.println("Takeoff DENIED to Aircraft " + aircraft.getAircraftId() +
-                    " at Airport " + airport.getId() + " due to time separation.");
-            return null;
+        long currentTime = System.currentTimeMillis() / 1000;
+        while ((currentTime - lastOperationTime) < timeBetween || getAvailableSlot() == null) {
+            long waitTime = timeBetween - (currentTime - lastOperationTime);
+            if (waitTime <= 0) waitTime = 1;
+            try {
+                wait(waitTime * 1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.out.println("Aircraft " + aircraft.getAircraftId() + " interrupted while waiting for takeoff.");
+                return null;
+            }
+            currentTime = System.currentTimeMillis() / 1000;
         }
-
         Slot availableSlot = getAvailableSlot();
         if (availableSlot != null) {
             availableSlot.setAvailable(false);
             lastOperationTime = currentTime;
-
             System.out.println("Takeoff GRANTED to Aircraft " + aircraft.getAircraftId() +
                     " from slot " + availableSlot.getId() +
                     " at Airport " + airport.getId());
             return availableSlot;
         }
-
-        System.out.println("Takeoff DENIED to Aircraft " + aircraft.getAircraftId() +
-                " at Airport " + airport.getId() + ": no slots available.");
         return null;
     }
 
-    /**
-     * Requests permission for an aircraft to land.
-     * Enforces time separation and slot availability.
-     */
     public synchronized Slot requestLandingPermission(Aircraft aircraft) {
-        long currentTime = System.currentTimeMillis() / 1000; // convert ms to seconds
-
-        if ((currentTime - lastOperationTime) < timeBetween) {
-            System.out.println("Landing DENIED to Aircraft " + aircraft.getAircraftId() +
-                    " at Airport " + airport.getId() + " due to time separation.");
-            return null;
+        long currentTime = System.currentTimeMillis() / 1000;
+        while ((currentTime - lastOperationTime) < timeBetween || getAvailableSlot() == null) {
+            long waitTime = timeBetween - (currentTime - lastOperationTime);
+            if (waitTime <= 0) waitTime = 1;
+            try {
+                wait(waitTime * 1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.out.println("Aircraft " + aircraft.getAircraftId() + " interrupted while waiting for landing.");
+                return null;
+            }
+            currentTime = System.currentTimeMillis() / 1000;
         }
-
         Slot availableSlot = getAvailableSlot();
         if (availableSlot != null) {
             availableSlot.setAvailable(false);
             lastOperationTime = currentTime;
-
             System.out.println("Landing GRANTED to Aircraft " + aircraft.getAircraftId() +
                     " on slot " + availableSlot.getId() +
                     " at Airport " + airport.getId());
             return availableSlot;
         }
-
-        System.out.println("Landing DENIED to Aircraft " + aircraft.getAircraftId() +
-                " at Airport " + airport.getId() + ": no slots available.");
         return null;
     }
 
-    /**
-     * Releases a slot after a takeoff or landing operation is complete.
-     */
     public synchronized void releaseSlot(Slot slot) {
         slot.setAvailable(true);
         System.out.println("Slot " + slot.getId() + " is now available again at Airport " + airport.getId());
+        notifyAll(); // notify waiting threads
     }
 
-    /**
-     * Retrieves the first available slot at the airport.
-     * Returns null if all slots are occupied.
-     */
     private Slot getAvailableSlot() {
         for (Slot slot : airport.getSlots()) {
             if (slot.isAvailable()) {

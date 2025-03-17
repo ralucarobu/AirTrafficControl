@@ -16,6 +16,10 @@ public class Route {
         this.currentTarget = new double[]{toAirport.getX(), toAirport.getY()};
     }
 
+    public Queue<double[]> getWaypoints() {
+        return waypoints;
+    }
+
     public double[] getCurrentTarget() {
         if (!waypoints.isEmpty()) {
             return waypoints.peek();
